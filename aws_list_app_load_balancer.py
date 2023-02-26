@@ -4,7 +4,7 @@ import sys
 import json
 from diagrams import Cluster, Diagram
 from diagrams.aws.compute import EC2
-from diagrams.aws.network import ELB
+from diagrams.aws.network import ELB,NLB,ALB,CLB
 
 
 # run as follows
@@ -89,17 +89,66 @@ def describelbs():
     # append the processed lb info into main variable    
     lbsinfo['lbs'].append(lbinfo)
 
-  print("\n",json.dumps(lbsinfo, indent=2, sort_keys=True))
+  #print("\n",json.dumps(lbsinfo, indent=2, sort_keys=True))
 
-    #with Diagram(profile+"_ABL_"+lbsinfo['name'],show=False):
-      #lb = ELB(lbs['public-batrasio-shared-pro-ap2'])
-      #print("\n", json.dumps(lb, indent=2))
-      #instances_group=[]
-      #for instance in lbs['TGinfo']
+  #let's prepare the output - in text file as well as diagrams
+  textfilename = "LB_"+region+".txt"
+  outfile = open(textfilename, "w")
+  
+  for lbs in lbsinfo['lbs']:
+    lbtype = lbs['type']
+    lbname = lbs['name']
+    outstr = "LB Name: "+lbname+"\n"+"Type: "+lbtype+"\n"
+    outfile.write(outstr)
+    lbstring = "Load Balancer: " + lbname
+    file_name = "LB_"+region+"_"+lbname
+    
+    # diagram will be called lbstring and filename will be called lbname
+    with Diagram(lbstring, direction="LR", filename=file_name) as diag:
+      # choose the appropriate load balancer, default is NBL
+      lbobject = NLB(lbname)
+      if lbtype == "network":
+        lbobject = NLB(lbname)
+      elif lbtype == "classic": 
+        lbobject = ELB(lbname)
+      elif lbtype == "application":
+        lbobject = CLB(lbname)
       
+      # prepare an array (cluster) of instance details - name, health, port
+      
+      for tg in lbs['tgs']:
+        tgname = tg['name']
+        # set the name of the cluster
+        tgstring = "Target Group: " + tgname
+        outstr = "  TG:\n    "+tgname+"\n"
+        outfile.write(outstr)
+        
+        # create the cluster of instances
+        with Cluster(tgstring):
+          instances=[]
+          for instance in tg['instances']:
+            inst_name = instance['Name']
+            health = instance['TargetHealth']['State']
+            healthcheckport = instance['HealthCheckPort']
+            port = instance['Target']['Port']
+            ec2id = instance['Target']['Id']
+            outstr = "      Name: " + inst_name + "\n      Id: " + ec2id + "\n      HealthStatus: " + health + "\n      HealthCheckPort: " + str(healthcheckport) + "\n      InstancePort: " + str(port) + "\n\n"
+            outfile.write(outstr)
+
+            inst_string = inst_name+"\n"+health+"\n"+str(port)
+            inst_node = EC2(inst_string)
+            instances.append(inst_node)    
+      
+        #outfile.write("\n")
+      # make the diagram
+      lbobject >> instances
+    diag
+    outfile.write("\n")
+  outfile.close()
+    
 if __name__ == "__main__":
   if len(sys.argv) < 3:
-    print(" RUN IT AS: python3 list_applb.py <region> <aws_profile> ")
+    print(" RUN IT AS: python3 aws_list_app_load_balancer.py <region> <aws_profile> ")
     exit()
   region      = sys.argv[1]
   profile     = sys.argv[2]
